@@ -8,22 +8,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type Filter struct {
-	Status    string
-	Channel   string
-	BatchID   *uuid.UUID
-	StartDate *time.Time
-	EndDate   *time.Time
-	Page      int
-	PageSize  int
-}
-
 type Repository interface {
 	Create(ctx context.Context, n *Notification) error
 	CreateBatch(ctx context.Context, notifications []*Notification) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Notification, error)
-	List(ctx context.Context, f Filter) ([]*Notification, int, error)
+	List(ctx context.Context, params ListParams) ([]*Notification, int, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) (*Notification, error)
+	IncrementRetry(ctx context.Context, id uuid.UUID, nextRetryAt time.Time) (*Notification, error)
+	ListRetryable(ctx context.Context, limit int) ([]*Notification, error)
 }
 
 type Queue interface {
@@ -32,14 +24,18 @@ type Queue interface {
 }
 
 type NotificationService struct {
-	repo  Repository
-	queue Queue
+	repo       Repository
+	queue      Queue
+	logger     *log.Entry
+	maxRetries int
 }
 
-func NewService(repo Repository, queue Queue) *NotificationService {
+func NewService(repo Repository, queue Queue, logger *log.Entry, maxRetries int) *NotificationService {
 	return &NotificationService{
-		repo:  repo,
-		queue: queue,
+		repo:       repo,
+		queue:      queue,
+		logger:     logger.WithField("component", "service"),
+		maxRetries: maxRetries,
 	}
 }
 
@@ -49,12 +45,13 @@ func (s *NotificationService) Create(ctx context.Context, req CreateRequest) (*R
 	}
 
 	n := &Notification{
-		ID:        uuid.Must(uuid.NewV7()),
-		Recipient: req.Recipient,
-		Channel:   req.Channel,
-		Content:   req.Content,
-		Priority:  req.Priority,
-		Status:    StatusPending,
+		ID:         uuid.Must(uuid.NewV7()),
+		Recipient:  req.Recipient,
+		Channel:    req.Channel,
+		Content:    req.Content,
+		Priority:   req.Priority,
+		Status:     StatusPending,
+		MaxRetries: s.maxRetries,
 	}
 
 	if err := s.repo.Create(ctx, n); err != nil {
@@ -62,14 +59,14 @@ func (s *NotificationService) Create(ctx context.Context, req CreateRequest) (*R
 	}
 
 	if err := s.queue.Publish(ctx, n); err != nil {
-		log.WithError(err).WithField("notification_id", n.ID).Error("failed to publish to queue")
+		s.logger.WithError(err).WithField("notificationId", n.ID).Error("failed to publish to queue")
 		if _, updateErr := s.repo.UpdateStatus(ctx, n.ID, StatusFailed); updateErr != nil {
-			log.WithError(updateErr).WithField("notification_id", n.ID).Error("failed to update status to failed")
+			s.logger.WithError(updateErr).WithField("notificationId", n.ID).Error("failed to update status to failed")
 		}
 		return nil, err
 	}
 
-	return toResponse(n), nil
+	return n.ToResponse(), nil
 }
 
 func (s *NotificationService) CreateBatch(ctx context.Context, req BatchCreateRequest) (*BatchCreateResponse, error) {
@@ -82,13 +79,14 @@ func (s *NotificationService) CreateBatch(ctx context.Context, req BatchCreateRe
 			priority = PriorityNormal
 		}
 		notifications[i] = &Notification{
-			ID:        uuid.Must(uuid.NewV7()),
-			BatchID:   &batchID,
-			Recipient: r.Recipient,
-			Channel:   r.Channel,
-			Content:   r.Content,
-			Priority:  priority,
-			Status:    StatusPending,
+			ID:         uuid.Must(uuid.NewV7()),
+			BatchID:    &batchID,
+			Recipient:  r.Recipient,
+			Channel:    r.Channel,
+			Content:    r.Content,
+			Priority:   priority,
+			Status:     StatusPending,
+			MaxRetries: s.maxRetries,
 		}
 	}
 
@@ -97,10 +95,10 @@ func (s *NotificationService) CreateBatch(ctx context.Context, req BatchCreateRe
 	}
 
 	if err := s.queue.PublishBatch(ctx, notifications); err != nil {
-		log.WithError(err).WithField("batch_id", batchID).Error("failed to publish batch to queue")
+		s.logger.WithError(err).WithField("batchId", batchID).Error("failed to publish batch to queue")
 		for _, n := range notifications {
 			if _, updateErr := s.repo.UpdateStatus(ctx, n.ID, StatusFailed); updateErr != nil {
-				log.WithError(updateErr).WithField("notification_id", n.ID).Error("failed to update status to failed")
+				s.logger.WithError(updateErr).WithField("notificationId", n.ID).Error("failed to update status to failed")
 			}
 		}
 		return nil, err
@@ -121,31 +119,31 @@ func (s *NotificationService) GetByID(ctx context.Context, id string) (*Response
 	if err != nil {
 		return nil, err
 	}
-	return toResponse(n), nil
+	return n.ToResponse(), nil
 }
 
 func (s *NotificationService) List(ctx context.Context, params ListParams) (*PagedResponse, error) {
-	filter := toFilter(params)
-	notifications, total, err := s.repo.List(ctx, filter)
+	params.Parse()
+	notifications, total, err := s.repo.List(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
 	responses := make([]Response, len(notifications))
 	for i, n := range notifications {
-		responses[i] = *toResponse(n)
+		responses[i] = *n.ToResponse()
 	}
 
-	totalPages := total / filter.PageSize
-	if total%filter.PageSize > 0 {
+	totalPages := total / params.PageSize
+	if total%params.PageSize > 0 {
 		totalPages++
 	}
 
 	return &PagedResponse{
 		Data:       responses,
 		TotalCount: total,
-		Page:       filter.Page,
-		PageSize:   filter.PageSize,
+		Page:       params.Page,
+		PageSize:   params.PageSize,
 		TotalPages: totalPages,
 	}, nil
 }
@@ -166,53 +164,6 @@ func (s *NotificationService) Cancel(ctx context.Context, id string) (*Response,
 	if err != nil {
 		return nil, err
 	}
-	return toResponse(n), nil
+	return n.ToResponse(), nil
 }
 
-func toResponse(n *Notification) *Response {
-	r := &Response{
-		ID:        n.ID.String(),
-		Recipient: n.Recipient,
-		Channel:   n.Channel,
-		Content:   n.Content,
-		Priority:  n.Priority,
-		Status:    n.Status,
-		CreatedAt: n.CreatedAt,
-		UpdatedAt: n.UpdatedAt,
-	}
-	if n.BatchID != nil {
-		r.BatchID = n.BatchID.String()
-	}
-	return r
-}
-
-func toFilter(params ListParams) Filter {
-	f := Filter{
-		Status:   params.Status,
-		Channel:  params.Channel,
-		Page:     params.Page,
-		PageSize: params.PageSize,
-	}
-	if f.Page < 1 {
-		f.Page = 1
-	}
-	if f.PageSize < 1 || f.PageSize > 100 {
-		f.PageSize = 20
-	}
-	if params.BatchID != "" {
-		if uid, err := uuid.Parse(params.BatchID); err == nil {
-			f.BatchID = &uid
-		}
-	}
-	if params.StartDate != "" {
-		if t, err := time.Parse(time.RFC3339, params.StartDate); err == nil {
-			f.StartDate = &t
-		}
-	}
-	if params.EndDate != "" {
-		if t, err := time.Parse(time.RFC3339, params.EndDate); err == nil {
-			f.EndDate = &t
-		}
-	}
-	return f
-}

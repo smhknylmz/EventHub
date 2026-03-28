@@ -49,20 +49,25 @@ func Execute() {
 	}
 	defer redisClient.Close()
 
-	queue := redisadapter.NewQueue(redisClient)
-	rateLimiter := redisadapter.NewRateLimiter(redisClient)
+	logger := log.WithField("app", "eventhub")
+
+	queue := redisadapter.NewQueue(redisClient, logger)
+	rateLimiter := redisadapter.NewRateLimiter(redisClient, logger)
 	webhookProvider := webhook.NewProvider(cfg.WebhookBaseURL)
 
 	notificationRepo := pgrepo.NewRepo(pool)
-	notificationService := notification.NewService(notificationRepo, queue)
+	notificationService := notification.NewService(notificationRepo, queue, logger, cfg.MaxRetries)
 
-	processor := worker.NewProcessor(notificationRepo, rateLimiter, webhookProvider)
-	dispatcher := worker.NewDispatcher(queue, processor, "worker-1")
+	processor := worker.NewProcessor(notificationRepo, rateLimiter, webhookProvider, logger, cfg.BackoffBase)
+	dispatcher := worker.NewDispatcher(queue, processor, logger, "worker-1")
 
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
 
 	go dispatcher.Start(workerCtx)
+
+	retryPoller := worker.NewRetryPoller(notificationRepo, queue, logger, cfg.RetryPollInterval)
+	go retryPoller.Start(workerCtx)
 
 	e := pkgecho.New()
 	e.Validator = pkgvalidator.New()

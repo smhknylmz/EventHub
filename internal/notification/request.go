@@ -1,5 +1,11 @@
 package notification
 
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
 type CreateRequest struct {
 	Recipient string `json:"recipient" validate:"required,max=255"`
 	Channel   string `json:"channel" validate:"required,oneof=email sms push"`
@@ -12,11 +18,39 @@ type BatchCreateRequest struct {
 }
 
 type ListParams struct {
-	Status    string `query:"status"`
-	Channel   string `query:"channel"`
-	BatchID   string `query:"batchId"`
-	StartDate string `query:"startDate"`
-	EndDate   string `query:"endDate"`
-	Page      int    `query:"page"`
-	PageSize  int    `query:"pageSize"`
+	Status    string     `query:"status"`
+	Channel   string     `query:"channel"`
+	BatchID   *uuid.UUID `query:"-"`
+	StartDate *time.Time `query:"-"`
+	EndDate   *time.Time `query:"-"`
+	Page      int        `query:"page"`
+	PageSize  int        `query:"pageSize"`
+
+	RawBatchID   string `query:"batchId"`
+	RawStartDate string `query:"startDate"`
+	RawEndDate   string `query:"endDate"`
+}
+
+func (p *ListParams) Parse() {
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.PageSize < 1 || p.PageSize > 100 {
+		p.PageSize = 20
+	}
+	if p.RawBatchID != "" {
+		if uid, err := uuid.Parse(p.RawBatchID); err == nil {
+			p.BatchID = &uid
+		}
+	}
+	if p.RawStartDate != "" {
+		if t, err := time.Parse(time.RFC3339, p.RawStartDate); err == nil {
+			p.StartDate = &t
+		}
+	}
+	if p.RawEndDate != "" {
+		if t, err := time.Parse(time.RFC3339, p.RawEndDate); err == nil {
+			p.EndDate = &t
+		}
+	}
 }

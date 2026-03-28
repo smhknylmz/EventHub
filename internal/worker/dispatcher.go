@@ -20,20 +20,22 @@ var priorityWeights = map[string]int64{
 type Dispatcher struct {
 	queue     *redisadapter.Queue
 	processor *Processor
+	logger    *log.Entry
 	consumer  string
 }
 
-func NewDispatcher(queue *redisadapter.Queue, processor *Processor, consumer string) *Dispatcher {
+func NewDispatcher(queue *redisadapter.Queue, processor *Processor, logger *log.Entry, consumer string) *Dispatcher {
 	return &Dispatcher{
 		queue:     queue,
 		processor: processor,
+		logger:    logger.WithField("component", "dispatcher"),
 		consumer:  consumer,
 	}
 }
 
 func (d *Dispatcher) Start(ctx context.Context) {
 	if err := d.queue.CreateConsumerGroups(ctx); err != nil {
-		log.WithError(err).Fatal("failed to create consumer groups")
+		d.logger.WithError(err).Fatal("failed to create consumer groups")
 	}
 
 	var wg sync.WaitGroup
@@ -65,7 +67,7 @@ func (d *Dispatcher) consumeStream(ctx context.Context, stream string) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.WithError(err).WithField("stream", stream).Error("failed to read from stream")
+			d.logger.WithError(err).WithField("stream", stream).Error("failed to read from stream")
 			time.Sleep(time.Second)
 			continue
 		}

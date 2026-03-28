@@ -36,6 +36,7 @@ func Migrate(databaseURL string, migrationsFS fs.FS) error {
 	if err != nil {
 		return fmt.Errorf("unable to create migrate instance: %w", err)
 	}
+	defer m.Close()
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("migration failed: %w", err)

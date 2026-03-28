@@ -20,10 +20,11 @@ const (
 
 type Queue struct {
 	client *redis.Client
+	logger *log.Entry
 }
 
-func NewQueue(client *redis.Client) *Queue {
-	return &Queue{client: client}
+func NewQueue(client *redis.Client, logger *log.Entry) *Queue {
+	return &Queue{client: client, logger: logger.WithField("component", "queue")}
 }
 
 func AllStreamKeys() []string {
@@ -108,7 +109,7 @@ func (q *Queue) Read(ctx context.Context, stream, consumer string, count int64) 
 		idStr, _ := msg.Values["id"].(string)
 		id, err := uuid.Parse(idStr)
 		if err != nil {
-			log.WithError(err).WithField("message_id", msg.ID).Error("invalid notification id in stream")
+			q.logger.WithError(err).WithField("messageId", msg.ID).Error("invalid notification id in stream")
 			q.client.XAck(ctx, stream, groupName, msg.ID)
 			continue
 		}
@@ -126,7 +127,7 @@ func (q *Queue) Read(ctx context.Context, stream, consumer string, count int64) 
 			Priority:  priority,
 		})
 		if err := q.client.XAck(ctx, stream, groupName, msg.ID).Err(); err != nil {
-			log.WithError(err).WithField("message_id", msg.ID).Error("failed to ack message")
+			q.logger.WithError(err).WithField("messageId", msg.ID).Error("failed to ack message")
 		}
 	}
 

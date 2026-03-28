@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -15,10 +16,11 @@ const (
 
 type RateLimiter struct {
 	client *redis.Client
+	logger *log.Entry
 }
 
-func NewRateLimiter(client *redis.Client) *RateLimiter {
-	return &RateLimiter{client: client}
+func NewRateLimiter(client *redis.Client, logger *log.Entry) *RateLimiter {
+	return &RateLimiter{client: client, logger: logger.WithField("component", "ratelimiter")}
 }
 
 func (r *RateLimiter) Allow(ctx context.Context, channel string) (bool, error) {
@@ -30,7 +32,9 @@ func (r *RateLimiter) Allow(ctx context.Context, channel string) (bool, error) {
 	}
 
 	if count == 1 {
-		r.client.Expire(ctx, key, 2*time.Second)
+		if err := r.client.Expire(ctx, key, 2*time.Second).Err(); err != nil {
+			r.logger.WithError(err).WithField("key", key).Error("failed to set rate limit key expiry")
+		}
 	}
 
 	return count <= maxPerSecond, nil

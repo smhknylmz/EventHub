@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -22,10 +23,10 @@ func NewRepo(pool *pgxpool.Pool) *Repo {
 
 func (r *Repo) Create(ctx context.Context, n *notification.Notification) error {
 	return r.pool.QueryRow(ctx,
-		`INSERT INTO notifications (id, batch_id, recipient, channel, content, priority, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO notifications (id, batch_id, recipient, channel, content, priority, status, max_retries)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING created_at, updated_at`,
-		n.ID, n.BatchID, n.Recipient, n.Channel, n.Content, n.Priority, n.Status,
+		n.ID, n.BatchID, n.Recipient, n.Channel, n.Content, n.Priority, n.Status, n.MaxRetries,
 	).Scan(&n.CreatedAt, &n.UpdatedAt)
 }
 
@@ -38,10 +39,10 @@ func (r *Repo) CreateBatch(ctx context.Context, notifications []*notification.No
 
 	for _, n := range notifications {
 		err := tx.QueryRow(ctx,
-			`INSERT INTO notifications (id, batch_id, recipient, channel, content, priority, status)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)
+			`INSERT INTO notifications (id, batch_id, recipient, channel, content, priority, status, max_retries)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			 RETURNING created_at, updated_at`,
-			n.ID, n.BatchID, n.Recipient, n.Channel, n.Content, n.Priority, n.Status,
+			n.ID, n.BatchID, n.Recipient, n.Channel, n.Content, n.Priority, n.Status, n.MaxRetries,
 		).Scan(&n.CreatedAt, &n.UpdatedAt)
 		if err != nil {
 			return err
@@ -54,9 +55,9 @@ func (r *Repo) CreateBatch(ctx context.Context, notifications []*notification.No
 func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*notification.Notification, error) {
 	var n notification.Notification
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, batch_id, recipient, channel, content, priority, status, created_at, updated_at
+		`SELECT id, batch_id, recipient, channel, content, priority, status, retry_count, max_retries, next_retry_at, created_at, updated_at
 		 FROM notifications WHERE id = $1`, id,
-	).Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.CreatedAt, &n.UpdatedAt)
+	).Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.RetryCount, &n.MaxRetries, &n.NextRetryAt, &n.CreatedAt, &n.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, notification.ErrNotFound
@@ -66,7 +67,7 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*notification.Notific
 	return &n, nil
 }
 
-func (r *Repo) List(ctx context.Context, f notification.Filter) ([]*notification.Notification, int, error) {
+func (r *Repo) List(ctx context.Context, f notification.ListParams) ([]*notification.Notification, int, error) {
 	conditions := []string{"1=1"}
 	args := []any{}
 	argIdx := 1
@@ -112,7 +113,7 @@ func (r *Repo) List(ctx context.Context, f notification.Filter) ([]*notification
 
 	rows, err := r.pool.Query(ctx,
 		fmt.Sprintf(
-			`SELECT id, batch_id, recipient, channel, content, priority, status, created_at, updated_at
+			`SELECT id, batch_id, recipient, channel, content, priority, status, retry_count, max_retries, next_retry_at, created_at, updated_at
 			 FROM notifications WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
 			where, argIdx, argIdx+1,
 		), args...,
@@ -125,7 +126,7 @@ func (r *Repo) List(ctx context.Context, f notification.Filter) ([]*notification
 	var notifications []*notification.Notification
 	for rows.Next() {
 		var n notification.Notification
-		if err := rows.Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.RetryCount, &n.MaxRetries, &n.NextRetryAt, &n.CreatedAt, &n.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
 		notifications = append(notifications, &n)
@@ -142,9 +143,9 @@ func (r *Repo) UpdateStatus(ctx context.Context, id uuid.UUID, status string) (*
 	var n notification.Notification
 	err := r.pool.QueryRow(ctx,
 		`UPDATE notifications SET status = $1, updated_at = NOW() WHERE id = $2
-		 RETURNING id, batch_id, recipient, channel, content, priority, status, created_at, updated_at`,
+		 RETURNING id, batch_id, recipient, channel, content, priority, status, retry_count, max_retries, next_retry_at, created_at, updated_at`,
 		status, id,
-	).Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.CreatedAt, &n.UpdatedAt)
+	).Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.RetryCount, &n.MaxRetries, &n.NextRetryAt, &n.CreatedAt, &n.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, notification.ErrNotFound
@@ -152,4 +153,50 @@ func (r *Repo) UpdateStatus(ctx context.Context, id uuid.UUID, status string) (*
 		return nil, err
 	}
 	return &n, nil
+}
+
+func (r *Repo) IncrementRetry(ctx context.Context, id uuid.UUID, nextRetryAt time.Time) (*notification.Notification, error) {
+	var n notification.Notification
+	err := r.pool.QueryRow(ctx,
+		`UPDATE notifications SET retry_count = retry_count + 1, next_retry_at = $1, status = 'failed', updated_at = NOW() WHERE id = $2
+		 RETURNING id, batch_id, recipient, channel, content, priority, status, retry_count, max_retries, next_retry_at, created_at, updated_at`,
+		nextRetryAt, id,
+	).Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.RetryCount, &n.MaxRetries, &n.NextRetryAt, &n.CreatedAt, &n.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, notification.ErrNotFound
+		}
+		return nil, err
+	}
+	return &n, nil
+}
+
+func (r *Repo) ListRetryable(ctx context.Context, limit int) ([]*notification.Notification, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, batch_id, recipient, channel, content, priority, status, retry_count, max_retries, next_retry_at, created_at, updated_at
+		 FROM notifications
+		 WHERE status = 'failed' AND next_retry_at IS NOT NULL AND next_retry_at <= NOW() AND retry_count < max_retries
+		 ORDER BY next_retry_at ASC
+		 LIMIT $1
+		 FOR UPDATE SKIP LOCKED`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var notifications []*notification.Notification
+	for rows.Next() {
+		var n notification.Notification
+		if err := rows.Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.RetryCount, &n.MaxRetries, &n.NextRetryAt, &n.CreatedAt, &n.UpdatedAt); err != nil {
+			return nil, err
+		}
+		notifications = append(notifications, &n)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return notifications, nil
 }

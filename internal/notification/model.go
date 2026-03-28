@@ -19,6 +19,7 @@ const (
 	StatusDelivered  = "delivered"
 	StatusFailed     = "failed"
 	StatusCancelled  = "cancelled"
+	StatusDeadLetter = "dead_letter"
 
 	PriorityHigh   = "high"
 	PriorityNormal = "normal"
@@ -30,13 +31,16 @@ const (
 )
 
 type Notification struct {
-	ID        uuid.UUID
-	BatchID   *uuid.UUID
-	Recipient string
-	Channel   string
-	Content   string
-	Priority  string
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           uuid.UUID
+	BatchID      *uuid.UUID
+	Recipient    string
+	Channel      string
+	Content      string
+	Priority     string
+	Status       string
+	RetryCount   int
+	MaxRetries   int
+	NextRetryAt  *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
