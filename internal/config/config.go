@@ -15,6 +15,7 @@ type Config struct {
 	MaxRetries        int           `env:"MAX_RETRIES" envDefault:"5"`
 	BackoffBase       time.Duration `env:"BACKOFF_BASE" envDefault:"1s"`
 	RetryPollInterval time.Duration `env:"RETRY_POLL_INTERVAL" envDefault:"5s"`
+	IdempotencyTTL    time.Duration `env:"IDEMPOTENCY_TTL" envDefault:"24h"`
 }
 
 func Load() (*Config, error) {

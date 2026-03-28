@@ -8,6 +8,8 @@ import (
 	"github.com/smhknylmz/EventHub/internal/notification"
 	redisadapter "github.com/smhknylmz/EventHub/internal/redis"
 	"github.com/smhknylmz/EventHub/internal/webhook"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type Processor struct {
@@ -29,6 +31,9 @@ func NewProcessor(repo notification.Repository, rateLimiter *redisadapter.RateLi
 }
 
 func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
+	start := time.Now()
+	attrs := attribute.String("channel", n.Channel)
+
 	logger := p.logger.WithFields(log.Fields{
 		"notificationId": n.ID,
 		"channel":         n.Channel,
@@ -40,6 +45,9 @@ func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
 		allowed, err := p.rateLimiter.Allow(ctx, n.Channel)
 		if err != nil {
 			logger.WithError(err).Error("rate limiter error")
+			if _, updateErr := p.repo.UpdateStatus(ctx, n.ID, notification.StatusFailed); updateErr != nil {
+				logger.WithError(updateErr).Error("failed to update status to failed after rate limiter error")
+			}
 			return
 		}
 		if allowed {
@@ -59,6 +67,7 @@ func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
 
 	if err := p.webhook.Send(ctx, current.Recipient, current.Channel, current.Content); err != nil {
 		logger.WithError(err).WithField("retryCount", current.RetryCount).Error("webhook delivery failed")
+		FailedCounter.Add(ctx, 1, metric.WithAttributes(attrs))
 		p.handleFailure(ctx, current, logger)
 		return
 	}
@@ -68,6 +77,8 @@ func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
 		return
 	}
 
+	DeliveredCounter.Add(ctx, 1, metric.WithAttributes(attrs))
+	LatencyHistogram.Record(ctx, float64(time.Since(start).Milliseconds()), metric.WithAttributes(attrs))
 	logger.Info("notification delivered")
 }
 

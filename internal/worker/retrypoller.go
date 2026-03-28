@@ -46,12 +46,13 @@ func (p *RetryPoller) poll(ctx context.Context) {
 	}
 
 	for _, n := range notifications {
-		if _, err := p.repo.UpdateStatus(ctx, n.ID, notification.StatusPending); err != nil {
+		updated, err := p.repo.UpdateStatus(ctx, n.ID, notification.StatusPending)
+		if err != nil {
 			p.logger.WithError(err).WithField("notificationId", n.ID).Error("failed to reset status to pending")
 			continue
 		}
 
-		if err := p.queue.Publish(ctx, n); err != nil {
+		if err := p.queue.Publish(ctx, updated); err != nil {
 			p.logger.WithError(err).WithField("notificationId", n.ID).Error("failed to re-publish notification")
 			continue
 		}

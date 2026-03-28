@@ -133,3 +133,15 @@ func (q *Queue) Read(ctx context.Context, stream, consumer string, count int64) 
 
 	return notifications, nil
 }
+
+func (q *Queue) TotalDepth(ctx context.Context) (int64, error) {
+	var total int64
+	for _, key := range AllStreamKeys() {
+		length, err := q.client.XLen(ctx, key).Result()
+		if err != nil {
+			return 0, err
+		}
+		total += length
+	}
+	return total, nil
+}
