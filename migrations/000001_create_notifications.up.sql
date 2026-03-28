@@ -1,6 +1,6 @@
 CREATE TYPE notification_status AS ENUM (
-    'pending', 'queued', 'processing',
-    'delivered', 'failed', 'cancelled', 'dead_letter'
+    'pending', 'processing',
+    'delivered', 'failed', 'cancelled'
 );
 
 CREATE TYPE notification_channel AS ENUM ('email', 'sms', 'push');

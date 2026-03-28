@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 type Filter struct {
@@ -25,12 +26,21 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) (*Notification, error)
 }
 
-type NotificationService struct {
-	repo Repository
+type Queue interface {
+	Publish(ctx context.Context, n *Notification) error
+	PublishBatch(ctx context.Context, notifications []*Notification) error
 }
 
-func NewService(repo Repository) *NotificationService {
-	return &NotificationService{repo: repo}
+type NotificationService struct {
+	repo  Repository
+	queue Queue
+}
+
+func NewService(repo Repository, queue Queue) *NotificationService {
+	return &NotificationService{
+		repo:  repo,
+		queue: queue,
+	}
 }
 
 func (s *NotificationService) Create(ctx context.Context, req CreateRequest) (*Response, error) {
@@ -48,6 +58,14 @@ func (s *NotificationService) Create(ctx context.Context, req CreateRequest) (*R
 	}
 
 	if err := s.repo.Create(ctx, n); err != nil {
+		return nil, err
+	}
+
+	if err := s.queue.Publish(ctx, n); err != nil {
+		log.WithError(err).WithField("notification_id", n.ID).Error("failed to publish to queue")
+		if _, updateErr := s.repo.UpdateStatus(ctx, n.ID, StatusFailed); updateErr != nil {
+			log.WithError(updateErr).WithField("notification_id", n.ID).Error("failed to update status to failed")
+		}
 		return nil, err
 	}
 
@@ -78,15 +96,19 @@ func (s *NotificationService) CreateBatch(ctx context.Context, req BatchCreateRe
 		return nil, err
 	}
 
-	responses := make([]Response, len(notifications))
-	for i, n := range notifications {
-		responses[i] = *toResponse(n)
+	if err := s.queue.PublishBatch(ctx, notifications); err != nil {
+		log.WithError(err).WithField("batch_id", batchID).Error("failed to publish batch to queue")
+		for _, n := range notifications {
+			if _, updateErr := s.repo.UpdateStatus(ctx, n.ID, StatusFailed); updateErr != nil {
+				log.WithError(updateErr).WithField("notification_id", n.ID).Error("failed to update status to failed")
+			}
+		}
+		return nil, err
 	}
 
 	return &BatchCreateResponse{
-		BatchID:       batchID.String(),
-		Notifications: responses,
-		Total:         len(responses),
+		BatchID: batchID.String(),
+		Total:   len(notifications),
 	}, nil
 }
 

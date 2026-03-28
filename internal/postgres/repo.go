@@ -131,6 +131,10 @@ func (r *Repo) List(ctx context.Context, f notification.Filter) ([]*notification
 		notifications = append(notifications, &n)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
 	return notifications, total, nil
 }
 

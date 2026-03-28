@@ -8,18 +8,25 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("notification not found")
-	ErrInvalidID     = errors.New("invalid notification id")
+	ErrNotFound       = errors.New("notification not found")
+	ErrInvalidID      = errors.New("invalid notification id")
 	ErrNotCancellable = errors.New("only pending notifications can be cancelled")
 )
 
 const (
-	StatusPending   = "pending"
-	StatusCancelled = "cancelled"
+	StatusPending    = "pending"
+	StatusProcessing = "processing"
+	StatusDelivered  = "delivered"
+	StatusFailed     = "failed"
+	StatusCancelled  = "cancelled"
 
 	PriorityHigh   = "high"
 	PriorityNormal = "normal"
 	PriorityLow    = "low"
+
+	ChannelEmail = "email"
+	ChannelSMS   = "sms"
+	ChannelPush  = "push"
 )
 
 type Notification struct {

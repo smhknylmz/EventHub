@@ -15,17 +15,16 @@ type Response struct {
 }
 
 type BatchCreateResponse struct {
-	BatchID       string     `json:"batchId"`
-	Notifications []Response `json:"notifications"`
-	Total         int        `json:"total"`
+	BatchID string `json:"batchId"`
+	Total   int    `json:"total"`
 }
 
 type PagedResponse struct {
-	Data       any   `json:"data"`
-	TotalCount int   `json:"totalCount"`
-	Page       int   `json:"page"`
-	PageSize   int   `json:"pageSize"`
-	TotalPages int   `json:"totalPages"`
+	Data       any `json:"data"`
+	TotalCount int `json:"totalCount"`
+	Page       int `json:"page"`
+	PageSize   int `json:"pageSize"`
+	TotalPages int `json:"totalPages"`
 }
 
 type ErrorResponse struct {

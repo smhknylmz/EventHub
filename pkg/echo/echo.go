@@ -26,8 +26,8 @@ func New() *echo.Echo {
 func Start(e *echo.Echo, addr string) {
 	go func() {
 		log.WithField("addr", addr).Info("starting server")
-		if err := e.Start(addr); err != nil {
-			log.Info("shutting down server")
+		if err := e.Start(addr); err != nil && err != http.ErrServerClosed {
+			log.WithError(err).Fatal("failed to start server")
 		}
 	}()
 
