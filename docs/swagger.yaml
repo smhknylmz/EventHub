@@ -38,9 +38,14 @@ definitions:
       recipient:
         maxLength: 255
         type: string
+      templateId:
+        type: string
+      templateVars:
+        additionalProperties:
+          type: string
+        type: object
     required:
     - channel
-    - content
     - recipient
     type: object
   notification.ErrorResponse:
@@ -82,8 +87,64 @@ definitions:
         type: integer
       status:
         type: string
+      templateId:
+        type: string
       updatedAt:
         type: string
+    type: object
+  template.CreateRequest:
+    properties:
+      body:
+        maxLength: 10000
+        type: string
+      name:
+        maxLength: 255
+        type: string
+    required:
+    - body
+    - name
+    type: object
+  template.ErrorResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  template.PagedResponse:
+    properties:
+      data: {}
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      totalCount:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  template.Response:
+    properties:
+      body:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  template.UpdateRequest:
+    properties:
+      body:
+        maxLength: 10000
+        type: string
+      name:
+        maxLength: 255
+        type: string
+    required:
+    - body
+    - name
     type: object
 host: localhost:8080
 info:
@@ -107,11 +168,11 @@ paths:
         in: query
         name: batchId
         type: string
-      - description: Filter by start date (RFC3339)
+      - description: Filter by start date
         in: query
         name: startDate
         type: string
-      - description: Filter by end date (RFC3339)
+      - description: Filter by end date
         in: query
         name: endDate
         type: string
@@ -256,4 +317,147 @@ paths:
       summary: Create notifications in batch
       tags:
       - notifications
+  /api/v1/templates:
+    get:
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/template.PagedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+      summary: List templates
+      tags:
+      - templates
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Template payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/template.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/template.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+      summary: Create a template
+      tags:
+      - templates
+  /api/v1/templates/{id}:
+    delete:
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+      summary: Delete a template
+      tags:
+      - templates
+    get:
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/template.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+      summary: Get template by ID
+      tags:
+      - templates
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Template payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/template.UpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/template.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/template.ErrorResponse'
+      summary: Update a template
+      tags:
+      - templates
 swagger: "2.0"

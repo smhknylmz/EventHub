@@ -7,10 +7,12 @@ import (
 )
 
 type CreateRequest struct {
-	Recipient string `json:"recipient" validate:"required,max=255"`
-	Channel   string `json:"channel" validate:"required,oneof=email sms push"`
-	Content   string `json:"content" validate:"required,max=10000"`
-	Priority  string `json:"priority" validate:"omitempty,oneof=high normal low"`
+	Recipient    string            `json:"recipient" validate:"required,max=255"`
+	Channel      string            `json:"channel" validate:"required,oneof=email sms push"`
+	Content      string            `json:"content" validate:"required_without=TemplateID,max=10000"`
+	Priority     string            `json:"priority" validate:"omitempty,oneof=high normal low"`
+	TemplateID   *uuid.UUID        `json:"templateId" validate:"omitempty"`
+	TemplateVars map[string]string `json:"templateVars" validate:"omitempty,dive,max=1000"`
 }
 
 type BatchCreateRequest struct {

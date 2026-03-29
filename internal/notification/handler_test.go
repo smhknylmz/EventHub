@@ -114,7 +114,7 @@ func TestHandlerGetByID(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		e, svc := setupEcho(t)
 		id := uuid.Must(uuid.NewV7())
-		svc.EXPECT().GetByID(gomock.Any(), id.String()).Return(&notification.Response{ID: id.String(), Status: notification.StatusDelivered}, nil)
+		svc.EXPECT().GetByID(gomock.Any(), id).Return(&notification.Response{ID: id.String(), Status: notification.StatusDelivered}, nil)
 
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/notifications/%s", id), nil)
 		rec := httptest.NewRecorder()
@@ -128,7 +128,7 @@ func TestHandlerGetByID(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		e, svc := setupEcho(t)
 		id := uuid.Must(uuid.NewV7())
-		svc.EXPECT().GetByID(gomock.Any(), id.String()).Return(nil, notification.ErrNotFound)
+		svc.EXPECT().GetByID(gomock.Any(), id).Return(nil, notification.ErrNotFound)
 
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/notifications/%s", id), nil)
 		rec := httptest.NewRecorder()
@@ -159,7 +159,7 @@ func TestHandlerCancel(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		e, svc := setupEcho(t)
 		id := uuid.Must(uuid.NewV7())
-		svc.EXPECT().Cancel(gomock.Any(), id.String()).Return(&notification.Response{ID: id.String(), Status: notification.StatusCancelled}, nil)
+		svc.EXPECT().Cancel(gomock.Any(), id).Return(&notification.Response{ID: id.String(), Status: notification.StatusCancelled}, nil)
 
 		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/notifications/%s/cancel", id), nil)
 		rec := httptest.NewRecorder()
@@ -173,7 +173,7 @@ func TestHandlerCancel(t *testing.T) {
 	t.Run("not cancellable", func(t *testing.T) {
 		e, svc := setupEcho(t)
 		id := uuid.Must(uuid.NewV7())
-		svc.EXPECT().Cancel(gomock.Any(), id.String()).Return(nil, notification.ErrNotCancellable)
+		svc.EXPECT().Cancel(gomock.Any(), id).Return(nil, notification.ErrNotCancellable)
 
 		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/notifications/%s/cancel", id), nil)
 		rec := httptest.NewRecorder()
@@ -192,7 +192,6 @@ func TestHandleError(t *testing.T) {
 		err        error
 		wantStatus int
 	}{
-		{"invalid id", notification.ErrInvalidID, http.StatusBadRequest},
 		{"not cancellable", notification.ErrNotCancellable, http.StatusBadRequest},
 		{"not found", notification.ErrNotFound, http.StatusNotFound},
 		{"internal error", errors.New("unknown"), http.StatusInternalServerError},

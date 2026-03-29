@@ -33,6 +33,7 @@ const (
 type Notification struct {
 	ID           uuid.UUID
 	BatchID      *uuid.UUID
+	TemplateID   *uuid.UUID
 	Recipient    string
 	Channel      string
 	Content      string

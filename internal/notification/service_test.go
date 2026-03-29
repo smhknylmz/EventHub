@@ -13,6 +13,8 @@ import (
 
 	"github.com/smhknylmz/EventHub/internal/notification"
 	"github.com/smhknylmz/EventHub/internal/notification/mock"
+	"github.com/smhknylmz/EventHub/internal/template"
+	tmplmock "github.com/smhknylmz/EventHub/internal/template/mock"
 )
 
 func newTestService(t *testing.T) (*notification.NotificationService, *mock.MockRepository, *mock.MockQueue) {
@@ -20,8 +22,72 @@ func newTestService(t *testing.T) (*notification.NotificationService, *mock.Mock
 	repo := mock.NewMockRepository(ctrl)
 	queue := mock.NewMockQueue(ctrl)
 	logger := log.NewEntry(log.New())
-	svc := notification.NewService(repo, queue, logger, 5)
+	svc := notification.NewService(repo, queue, nil, logger, 5)
 	return svc, repo, queue
+}
+
+func newTestServiceWithTemplateRepo(t *testing.T) (*notification.NotificationService, *mock.MockRepository, *mock.MockQueue, *tmplmock.MockRepository) {
+	ctrl := gomock.NewController(t)
+	repo := mock.NewMockRepository(ctrl)
+	queue := mock.NewMockQueue(ctrl)
+	tmplRepo := tmplmock.NewMockRepository(ctrl)
+	logger := log.NewEntry(log.New())
+	svc := notification.NewService(repo, queue, tmplRepo, logger, 5)
+	return svc, repo, queue, tmplRepo
+}
+
+func TestServiceCreateWithTemplate(t *testing.T) {
+	t.Run("success with template and vars", func(t *testing.T) {
+		svc, repo, queue, tmplRepo := newTestServiceWithTemplateRepo(t)
+
+		templateID := uuid.Must(uuid.NewV7())
+		tmplRepo.EXPECT().GetByID(gomock.Any(), templateID).Return(&template.Template{Body: "Hello {{name}}, welcome to {{place}}"}, nil)
+		repo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
+		queue.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(nil)
+
+		resp, err := svc.Create(context.Background(), notification.CreateRequest{
+			Recipient:    "test@example.com",
+			Channel:      notification.ChannelEmail,
+			TemplateID:   &templateID,
+			TemplateVars: map[string]string{"name": "Semih", "place": "EventHub"},
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "Hello Semih, welcome to EventHub", resp.Content)
+	})
+
+	t.Run("template not found", func(t *testing.T) {
+		svc, _, _, tmplRepo := newTestServiceWithTemplateRepo(t)
+
+		templateID := uuid.Must(uuid.NewV7())
+		tmplRepo.EXPECT().GetByID(gomock.Any(), templateID).Return(nil, errors.New("template not found"))
+
+		_, err := svc.Create(context.Background(), notification.CreateRequest{
+			Recipient:  "test@example.com",
+			Channel:    notification.ChannelEmail,
+			TemplateID: &templateID,
+		})
+
+		assert.Error(t, err)
+	})
+
+	t.Run("unresolved placeholder returns error", func(t *testing.T) {
+		svc, _, _, tmplRepo := newTestServiceWithTemplateRepo(t)
+
+		templateID := uuid.Must(uuid.NewV7())
+		tmplRepo.EXPECT().GetByID(gomock.Any(), templateID).Return(&template.Template{Body: "Hello {{name}}, your code is {{code}}"}, nil)
+
+		_, err := svc.Create(context.Background(), notification.CreateRequest{
+			Recipient:    "test@example.com",
+			Channel:      notification.ChannelEmail,
+			TemplateID:   &templateID,
+			TemplateVars: map[string]string{"name": "Semih"},
+		})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unresolved template variables")
+		assert.Contains(t, err.Error(), "{{code}}")
+	})
 }
 
 func TestServiceCreate(t *testing.T) {
@@ -115,7 +181,7 @@ func TestServiceCreateBatch(t *testing.T) {
 
 		repo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Return(nil)
 		queue.EXPECT().PublishBatch(gomock.Any(), gomock.Any()).Return(errors.New("queue down"))
-		repo.EXPECT().UpdateStatus(gomock.Any(), gomock.Any(), notification.StatusFailed).Return(&notification.Notification{}, nil).Times(2)
+		repo.EXPECT().UpdateStatusBatch(gomock.Any(), gomock.Any(), notification.StatusFailed).Return(nil)
 
 		_, err := svc.CreateBatch(context.Background(), notification.BatchCreateRequest{
 			Notifications: []notification.CreateRequest{
@@ -135,18 +201,10 @@ func TestServiceGetByID(t *testing.T) {
 
 		repo.EXPECT().GetByID(gomock.Any(), id).Return(&notification.Notification{ID: id, Status: notification.StatusPending, Channel: notification.ChannelEmail}, nil)
 
-		resp, err := svc.GetByID(context.Background(), id.String())
+		resp, err := svc.GetByID(context.Background(), id)
 
 		require.NoError(t, err)
 		assert.Equal(t, id.String(), resp.ID)
-	})
-
-	t.Run("invalid id", func(t *testing.T) {
-		svc, _, _ := newTestService(t)
-
-		_, err := svc.GetByID(context.Background(), "not-a-uuid")
-
-		assert.ErrorIs(t, err, notification.ErrInvalidID)
 	})
 
 	t.Run("not found", func(t *testing.T) {
@@ -155,7 +213,7 @@ func TestServiceGetByID(t *testing.T) {
 
 		repo.EXPECT().GetByID(gomock.Any(), id).Return(nil, notification.ErrNotFound)
 
-		_, err := svc.GetByID(context.Background(), id.String())
+		_, err := svc.GetByID(context.Background(), id)
 
 		assert.ErrorIs(t, err, notification.ErrNotFound)
 	})
@@ -183,18 +241,10 @@ func TestServiceCancel(t *testing.T) {
 
 		repo.EXPECT().CancelIfPending(gomock.Any(), id).Return(&notification.Notification{ID: id, Status: notification.StatusCancelled}, nil)
 
-		resp, err := svc.Cancel(context.Background(), id.String())
+		resp, err := svc.Cancel(context.Background(), id)
 
 		require.NoError(t, err)
 		assert.Equal(t, notification.StatusCancelled, resp.Status)
-	})
-
-	t.Run("invalid id", func(t *testing.T) {
-		svc, _, _ := newTestService(t)
-
-		_, err := svc.Cancel(context.Background(), "bad")
-
-		assert.ErrorIs(t, err, notification.ErrInvalidID)
 	})
 
 	t.Run("not cancellable", func(t *testing.T) {
@@ -203,7 +253,7 @@ func TestServiceCancel(t *testing.T) {
 
 		repo.EXPECT().CancelIfPending(gomock.Any(), id).Return(nil, notification.ErrNotCancellable)
 
-		_, err := svc.Cancel(context.Background(), id.String())
+		_, err := svc.Cancel(context.Background(), id)
 
 		assert.ErrorIs(t, err, notification.ErrNotCancellable)
 	})

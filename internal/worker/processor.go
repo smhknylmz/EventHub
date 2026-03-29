@@ -59,7 +59,11 @@ func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
 		if allowed {
 			break
 		}
-		time.Sleep(backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
 		if backoff < 500*time.Millisecond {
 			backoff *= 2
 		}

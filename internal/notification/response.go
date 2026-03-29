@@ -5,6 +5,7 @@ import "time"
 type Response struct {
 	ID          string     `json:"id"`
 	BatchID     string     `json:"batchId,omitempty"`
+	TemplateID  string     `json:"templateId,omitempty"`
 	Recipient   string     `json:"recipient"`
 	Channel     string     `json:"channel"`
 	Content     string     `json:"content"`
@@ -48,6 +49,9 @@ func (n *Notification) ToResponse() *Response {
 	}
 	if n.BatchID != nil {
 		r.BatchID = n.BatchID.String()
+	}
+	if n.TemplateID != nil {
+		r.TemplateID = n.TemplateID.String()
 	}
 	return r
 }

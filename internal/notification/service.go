@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/smhknylmz/EventHub/internal/template"
 )
 
 type Repository interface {
@@ -14,6 +16,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Notification, error)
 	List(ctx context.Context, params ListParams) ([]*Notification, int, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) (*Notification, error)
+	UpdateStatusBatch(ctx context.Context, ids []uuid.UUID, status string) error
 	CancelIfPending(ctx context.Context, id uuid.UUID) (*Notification, error)
 	IncrementRetry(ctx context.Context, id uuid.UUID, nextRetryAt time.Time) (*Notification, error)
 	ListRetryable(ctx context.Context, limit int) ([]*Notification, error)
@@ -25,19 +28,35 @@ type Queue interface {
 }
 
 type NotificationService struct {
-	repo       Repository
-	queue      Queue
-	logger     *log.Entry
-	maxRetries int
+	repo         Repository
+	queue        Queue
+	templateRepo template.Repository
+	logger       *log.Entry
+	maxRetries   int
 }
 
-func NewService(repo Repository, queue Queue, logger *log.Entry, maxRetries int) *NotificationService {
+func NewService(repo Repository, queue Queue, templateRepo template.Repository, logger *log.Entry, maxRetries int) *NotificationService {
 	return &NotificationService{
-		repo:       repo,
-		queue:      queue,
-		logger:     logger.WithField("component", "service"),
-		maxRetries: maxRetries,
+		repo:         repo,
+		queue:        queue,
+		templateRepo: templateRepo,
+		logger:       logger.WithField("component", "service"),
+		maxRetries:   maxRetries,
 	}
+}
+
+func (s *NotificationService) resolveContent(ctx context.Context, req CreateRequest) (string, error) {
+	if req.TemplateID == nil {
+		return req.Content, nil
+	}
+
+	tmpl, err := s.templateRepo.GetByID(ctx, *req.TemplateID)
+	if err != nil {
+		s.logger.WithFields(log.Fields{"templateId": req.TemplateID, "err": err}).Error("failed to get template")
+		return "", err
+	}
+
+	return tmpl.RenderBody(req.TemplateVars)
 }
 
 func (s *NotificationService) Create(ctx context.Context, req CreateRequest) (*Response, error) {
@@ -45,24 +64,31 @@ func (s *NotificationService) Create(ctx context.Context, req CreateRequest) (*R
 		req.Priority = PriorityNormal
 	}
 
+	content, err := s.resolveContent(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	n := &Notification{
 		ID:         uuid.Must(uuid.NewV7()),
+		TemplateID: req.TemplateID,
 		Recipient:  req.Recipient,
 		Channel:    req.Channel,
-		Content:    req.Content,
+		Content:    content,
 		Priority:   req.Priority,
 		Status:     StatusPending,
 		MaxRetries: s.maxRetries,
 	}
 
 	if err := s.repo.Create(ctx, n); err != nil {
+		s.logger.WithFields(log.Fields{"err": err}).Error("failed to create notification in repo")
 		return nil, err
 	}
 
 	if err := s.queue.Publish(ctx, n); err != nil {
-		s.logger.WithError(err).WithField("notificationId", n.ID).Error("failed to publish to queue")
+		s.logger.WithFields(log.Fields{"notificationId": n.ID, "err": err}).Error("failed to publish to queue")
 		if _, updateErr := s.repo.UpdateStatus(ctx, n.ID, StatusFailed); updateErr != nil {
-			s.logger.WithError(updateErr).WithField("notificationId", n.ID).Error("failed to update status to failed")
+			s.logger.WithFields(log.Fields{"notificationId": n.ID, "err": updateErr}).Error("failed to update status to failed")
 		}
 		return nil, err
 	}
@@ -79,12 +105,17 @@ func (s *NotificationService) CreateBatch(ctx context.Context, req BatchCreateRe
 		if priority == "" {
 			priority = PriorityNormal
 		}
+		content, err := s.resolveContent(ctx, r)
+		if err != nil {
+			return nil, err
+		}
 		notifications[i] = &Notification{
 			ID:         uuid.Must(uuid.NewV7()),
 			BatchID:    &batchID,
+			TemplateID: r.TemplateID,
 			Recipient:  r.Recipient,
 			Channel:    r.Channel,
-			Content:    r.Content,
+			Content:    content,
 			Priority:   priority,
 			Status:     StatusPending,
 			MaxRetries: s.maxRetries,
@@ -92,15 +123,18 @@ func (s *NotificationService) CreateBatch(ctx context.Context, req BatchCreateRe
 	}
 
 	if err := s.repo.CreateBatch(ctx, notifications); err != nil {
+		s.logger.WithFields(log.Fields{"err": err}).Error("failed to create batch in repo")
 		return nil, err
 	}
 
 	if err := s.queue.PublishBatch(ctx, notifications); err != nil {
-		s.logger.WithError(err).WithField("batchId", batchID).Error("failed to publish batch to queue")
-		for _, n := range notifications {
-			if _, updateErr := s.repo.UpdateStatus(ctx, n.ID, StatusFailed); updateErr != nil {
-				s.logger.WithError(updateErr).WithField("notificationId", n.ID).Error("failed to update status to failed")
-			}
+		s.logger.WithFields(log.Fields{"batchId": batchID, "err": err}).Error("failed to publish batch to queue")
+		ids := make([]uuid.UUID, len(notifications))
+		for i, n := range notifications {
+			ids[i] = n.ID
+		}
+		if updateErr := s.repo.UpdateStatusBatch(ctx, ids, StatusFailed); updateErr != nil {
+			s.logger.WithFields(log.Fields{"batchId": batchID, "err": updateErr}).Error("failed to update batch status to failed")
 		}
 		return nil, err
 	}
@@ -111,13 +145,10 @@ func (s *NotificationService) CreateBatch(ctx context.Context, req BatchCreateRe
 	}, nil
 }
 
-func (s *NotificationService) GetByID(ctx context.Context, id string) (*Response, error) {
-	uid, err := uuid.Parse(id)
+func (s *NotificationService) GetByID(ctx context.Context, id uuid.UUID) (*Response, error) {
+	n, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, ErrInvalidID
-	}
-	n, err := s.repo.GetByID(ctx, uid)
-	if err != nil {
+		s.logger.WithFields(log.Fields{"notificationId": id, "err": err}).Error("failed to get notification by id")
 		return nil, err
 	}
 	return n.ToResponse(), nil
@@ -127,6 +158,7 @@ func (s *NotificationService) List(ctx context.Context, params ListParams) (*Pag
 	params.Parse()
 	notifications, total, err := s.repo.List(ctx, params)
 	if err != nil {
+		s.logger.WithFields(log.Fields{"err": err}).Error("failed to list notifications")
 		return nil, err
 	}
 
@@ -149,15 +181,11 @@ func (s *NotificationService) List(ctx context.Context, params ListParams) (*Pag
 	}, nil
 }
 
-func (s *NotificationService) Cancel(ctx context.Context, id string) (*Response, error) {
-	uid, err := uuid.Parse(id)
+func (s *NotificationService) Cancel(ctx context.Context, id uuid.UUID) (*Response, error) {
+	n, err := s.repo.CancelIfPending(ctx, id)
 	if err != nil {
-		return nil, ErrInvalidID
-	}
-	n, err := s.repo.CancelIfPending(ctx, uid)
-	if err != nil {
+		s.logger.WithFields(log.Fields{"notificationId": id, "err": err}).Error("failed to cancel notification")
 		return nil, err
 	}
 	return n.ToResponse(), nil
 }
-

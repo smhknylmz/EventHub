@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	uuid "github.com/google/uuid"
 	notification "github.com/smhknylmz/EventHub/internal/notification"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -42,7 +43,7 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 }
 
 // Cancel mocks base method.
-func (m *MockService) Cancel(ctx context.Context, id string) (*notification.Response, error) {
+func (m *MockService) Cancel(ctx context.Context, id uuid.UUID) (*notification.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Cancel", ctx, id)
 	ret0, _ := ret[0].(*notification.Response)
@@ -87,7 +88,7 @@ func (mr *MockServiceMockRecorder) CreateBatch(ctx, req any) *gomock.Call {
 }
 
 // GetByID mocks base method.
-func (m *MockService) GetByID(ctx context.Context, id string) (*notification.Response, error) {
+func (m *MockService) GetByID(ctx context.Context, id uuid.UUID) (*notification.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetByID", ctx, id)
 	ret0, _ := ret[0].(*notification.Response)

@@ -24,6 +24,7 @@ Client → Http (Echo) → PostgreSql (persistence)
 ## Quick Start
 
 ```bash
+cp .env.example .env   # configure WEBHOOK_BASE_URL
 docker-compose up
 ```
 
@@ -52,6 +53,11 @@ The api will be available at `http://localhost:8080`
 | `GET` | `/api/v1/notifications/:id` | Get by ID |
 | `GET` | `/api/v1/notifications` | List with filters |
 | `PATCH` | `/api/v1/notifications/:id/cancel` | Cancel pending |
+| `POST` | `/api/v1/templates` | Create template |
+| `GET` | `/api/v1/templates/:id` | Get template by ID |
+| `GET` | `/api/v1/templates` | List templates |
+| `PUT` | `/api/v1/templates/:id` | Update template |
+| `DELETE` | `/api/v1/templates/:id` | Delete template |
 | `GET` | `/health` | Health check |
 | `GET` | `/metrics` | Prometheus metrics |
 | `GET` | `/swagger/index.html` | API documentation |
@@ -78,6 +84,17 @@ curl -X POST http://localhost:8080/api/v1/notifications/batch \
 **List with filters:**
 ```bash
 curl "http://localhost:8080/api/v1/notifications?status=delivered&channel=sms&page=1&pageSize=20"
+```
+
+**Create template and send notification with it:**
+```bash
+curl -X POST http://localhost:8080/api/v1/templates \
+  -H "Content-Type: application/json" \
+  -d '{"name": "welcome", "body": "Hello {{name}}, welcome to {{company}}"}'
+
+curl -X POST http://localhost:8080/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"recipient": "user@email.com", "channel": "email", "templateId": "<template-uuid>", "templateVars": {"name": "Semih", "company": "Insider"}}'
 ```
 
 **Idempotent request:**

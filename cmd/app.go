@@ -12,6 +12,7 @@ import (
 	"github.com/smhknylmz/EventHub/internal/middleware"
 	"github.com/smhknylmz/EventHub/internal/notification"
 	pgrepo "github.com/smhknylmz/EventHub/internal/postgres"
+	"github.com/smhknylmz/EventHub/internal/template"
 	redisadapter "github.com/smhknylmz/EventHub/internal/redis"
 	"github.com/smhknylmz/EventHub/internal/webhook"
 	"github.com/smhknylmz/EventHub/internal/worker"
@@ -21,7 +22,6 @@ import (
 	"github.com/smhknylmz/EventHub/pkg/postgres"
 	pkgredis "github.com/smhknylmz/EventHub/pkg/redis"
 	pkgvalidator "github.com/smhknylmz/EventHub/pkg/validator"
-
 	_ "github.com/smhknylmz/EventHub/docs"
 )
 
@@ -63,7 +63,8 @@ func Execute() {
 	webhookProvider := webhook.NewProvider(cfg.WebhookBaseURL)
 
 	notificationRepo := pgrepo.NewRepo(pool)
-	notificationService := notification.NewService(notificationRepo, queue, logger, cfg.MaxRetries)
+	templateRepo := pgrepo.NewTemplateRepo(pool)
+	notificationService := notification.NewService(notificationRepo, queue, templateRepo, logger, cfg.MaxRetries)
 
 	metricsHandler, err := pkgmetrics.Setup()
 	if err != nil {
@@ -93,6 +94,10 @@ func Execute() {
 
 	notificationHandler := notification.NewHandler(notificationService)
 	notificationHandler.Register(e)
+
+	templateService := template.NewService(templateRepo, logger)
+	templateHandler := template.NewHandler(templateService)
+	templateHandler.Register(e)
 
 	pkgecho.Start(e, fmt.Sprintf(":%d", cfg.ServerPort))
 }

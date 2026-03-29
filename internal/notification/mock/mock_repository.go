@@ -162,6 +162,20 @@ func (mr *MockRepositoryMockRecorder) UpdateStatus(ctx, id, status any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStatus", reflect.TypeOf((*MockRepository)(nil).UpdateStatus), ctx, id, status)
 }
 
+// UpdateStatusBatch mocks base method.
+func (m *MockRepository) UpdateStatusBatch(ctx context.Context, ids []uuid.UUID, status string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateStatusBatch", ctx, ids, status)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateStatusBatch indicates an expected call of UpdateStatusBatch.
+func (mr *MockRepositoryMockRecorder) UpdateStatusBatch(ctx, ids, status any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStatusBatch", reflect.TypeOf((*MockRepository)(nil).UpdateStatusBatch), ctx, ids, status)
+}
+
 // MockQueue is a mock of Queue interface.
 type MockQueue struct {
 	ctrl     *gomock.Controller
