@@ -37,6 +37,15 @@ func NewProcessor(repo notification.Repository, rateLimiter RateLimiter, webhook
 }
 
 func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.logger.WithFields(log.Fields{"notificationId": n.ID, "panic": r}).Error("panic recovered in processor")
+			if _, err := p.repo.UpdateStatus(ctx, n.ID, notification.StatusFailed); err != nil {
+				p.logger.WithFields(log.Fields{"notificationId": n.ID, "err": err}).Error("failed to update status after panic")
+			}
+		}
+	}()
+
 	start := time.Now()
 	attrs := attribute.String("channel", n.Channel)
 

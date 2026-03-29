@@ -50,8 +50,10 @@ func Idempotency(client *redis.Client, ttl time.Duration) echo.MiddlewareFunc {
 				return err
 			}
 
-			entry, _ := json.Marshal(cachedEntry{StatusCode: rec.statusCode, Body: rec.body.Bytes()})
-			client.Set(ctx, redisKey, entry, ttl)
+			if rec.statusCode >= 200 && rec.statusCode < 300 {
+				entry, _ := json.Marshal(cachedEntry{StatusCode: rec.statusCode, Body: rec.body.Bytes()})
+				client.Set(ctx, redisKey, entry, ttl)
+			}
 
 			return nil
 		}

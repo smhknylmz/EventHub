@@ -9,7 +9,6 @@ import (
 
 var (
 	ErrNotFound       = errors.New("notification not found")
-	ErrInvalidID      = errors.New("invalid notification id")
 	ErrNotCancellable = errors.New("only pending notifications can be cancelled")
 )
 

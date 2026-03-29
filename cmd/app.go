@@ -3,9 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/labstack/echo/v4"
+	echomw "github.com/labstack/echo/v4/middleware"
 	echoSwagger "github.com/swaggo/echo-swagger"
 
 	"github.com/smhknylmz/EventHub/internal/config"
@@ -76,15 +81,23 @@ func Execute() {
 	dispatcher := worker.NewDispatcher(queue, processor, logger, "worker-1")
 
 	workerCtx, workerCancel := context.WithCancel(ctx)
-	defer workerCancel()
-
-	go dispatcher.Start(workerCtx)
 
 	retryPoller := worker.NewRetryPoller(notificationRepo, queue, logger, cfg.RetryPollInterval)
-	go retryPoller.Start(workerCtx)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		dispatcher.Start(workerCtx)
+	}()
+	go func() {
+		defer wg.Done()
+		retryPoller.Start(workerCtx)
+	}()
 
 	e := pkgecho.New()
 	e.Validator = pkgvalidator.New()
+	e.Use(echomw.Recover())
 	e.Use(middleware.CorrelationID())
 	e.Use(middleware.RequestLogger(logger))
 	e.Use(middleware.Idempotency(redisClient, cfg.IdempotencyTTL))
@@ -100,4 +113,14 @@ func Execute() {
 	templateHandler.Register(e)
 
 	pkgecho.Start(e, fmt.Sprintf(":%d", cfg.ServerPort))
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	workerCancel()
+	wg.Wait()
+	logger.Info("workers stopped")
+
+	pkgecho.Shutdown(e)
 }

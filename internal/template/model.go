@@ -12,7 +12,6 @@ import (
 
 var (
 	ErrNotFound              = errors.New("template not found")
-	ErrInvalidID             = errors.New("invalid template id")
 	ErrNameConflict          = errors.New("template name already exists")
 	ErrUnresolvedPlaceholder = errors.New("unresolved template variables")
 )

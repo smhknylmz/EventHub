@@ -71,7 +71,7 @@ func (h *Handler) Create(c echo.Context) error {
 func (h *Handler) GetByID(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: ErrInvalidID.Error()})
+		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: "invalid template id"})
 	}
 	resp, err := h.service.GetByID(c.Request().Context(), id)
 	if err != nil {
@@ -121,7 +121,7 @@ func (h *Handler) Update(c echo.Context) error {
 	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: ErrInvalidID.Error()})
+		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: "invalid template id"})
 	}
 	resp, err := h.service.Update(c.Request().Context(), id, req)
 	if err != nil {
@@ -140,7 +140,7 @@ func (h *Handler) Update(c echo.Context) error {
 func (h *Handler) Delete(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: ErrInvalidID.Error()})
+		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: "invalid template id"})
 	}
 	if err := h.service.Delete(c.Request().Context(), id); err != nil {
 		return HandleError(c, err)

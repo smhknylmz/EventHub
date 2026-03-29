@@ -3,9 +3,6 @@ package echo
 import (
 	"context"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -30,12 +27,10 @@ func Start(e *echo.Echo, addr string) {
 			log.WithError(err).Fatal("failed to start server")
 		}
 	}()
+}
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+func Shutdown(e *echo.Echo) {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := e.Shutdown(shutdownCtx); err != nil {

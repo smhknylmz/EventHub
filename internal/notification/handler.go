@@ -98,7 +98,7 @@ func (h *Handler) CreateBatch(c echo.Context) error {
 func (h *Handler) GetByID(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: ErrInvalidID.Error()})
+		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: "invalid notification id"})
 	}
 	resp, err := h.service.GetByID(c.Request().Context(), id)
 	if err != nil {
@@ -143,7 +143,7 @@ func (h *Handler) List(c echo.Context) error {
 func (h *Handler) Cancel(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: ErrInvalidID.Error()})
+		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: "invalid notification id"})
 	}
 	resp, err := h.service.Cancel(c.Request().Context(), id)
 	if err != nil {
