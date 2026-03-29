@@ -33,12 +33,12 @@ func (p *RetryPoller) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.poll(ctx)
+			p.Poll(ctx)
 		}
 	}
 }
 
-func (p *RetryPoller) poll(ctx context.Context) {
+func (p *RetryPoller) Poll(ctx context.Context) {
 	notifications, err := p.repo.ListRetryable(ctx, 100)
 	if err != nil {
 		p.logger.WithError(err).Error("failed to list retryable notifications")

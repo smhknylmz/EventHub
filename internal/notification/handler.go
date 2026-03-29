@@ -54,7 +54,7 @@ func (h *Handler) Create(c echo.Context) error {
 	}
 	resp, err := h.service.Create(c.Request().Context(), req)
 	if err != nil {
-		return handleError(c, err)
+		return HandleError(c, err)
 	}
 	return c.JSON(http.StatusCreated, resp)
 }
@@ -79,7 +79,7 @@ func (h *Handler) CreateBatch(c echo.Context) error {
 	}
 	resp, err := h.service.CreateBatch(c.Request().Context(), req)
 	if err != nil {
-		return handleError(c, err)
+		return HandleError(c, err)
 	}
 	return c.JSON(http.StatusCreated, resp)
 }
@@ -96,7 +96,7 @@ func (h *Handler) GetByID(c echo.Context) error {
 	id := c.Param("id")
 	resp, err := h.service.GetByID(c.Request().Context(), id)
 	if err != nil {
-		return handleError(c, err)
+		return HandleError(c, err)
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -121,7 +121,7 @@ func (h *Handler) List(c echo.Context) error {
 	}
 	resp, err := h.service.List(c.Request().Context(), params)
 	if err != nil {
-		return handleError(c, err)
+		return HandleError(c, err)
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -138,12 +138,12 @@ func (h *Handler) Cancel(c echo.Context) error {
 	id := c.Param("id")
 	resp, err := h.service.Cancel(c.Request().Context(), id)
 	if err != nil {
-		return handleError(c, err)
+		return HandleError(c, err)
 	}
 	return c.JSON(http.StatusOK, resp)
 }
 
-func handleError(c echo.Context, err error) error {
+func HandleError(c echo.Context, err error) error {
 	switch {
 	case errors.Is(err, ErrInvalidID), errors.Is(err, ErrNotCancellable):
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})

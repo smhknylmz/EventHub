@@ -6,21 +6,27 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/smhknylmz/EventHub/internal/notification"
-	redisadapter "github.com/smhknylmz/EventHub/internal/redis"
-	"github.com/smhknylmz/EventHub/internal/webhook"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
+type RateLimiter interface {
+	Allow(ctx context.Context, channel string) (bool, error)
+}
+
+type WebhookSender interface {
+	Send(ctx context.Context, recipient, channel, content string) error
+}
+
 type Processor struct {
 	repo        notification.Repository
-	rateLimiter *redisadapter.RateLimiter
-	webhook     *webhook.Provider
+	rateLimiter RateLimiter
+	webhook     WebhookSender
 	logger      *log.Entry
 	backoffBase time.Duration
 }
 
-func NewProcessor(repo notification.Repository, rateLimiter *redisadapter.RateLimiter, webhook *webhook.Provider, logger *log.Entry, backoffBase time.Duration) *Processor {
+func NewProcessor(repo notification.Repository, rateLimiter RateLimiter, webhook WebhookSender, logger *log.Entry, backoffBase time.Duration) *Processor {
 	return &Processor{
 		repo:        repo,
 		rateLimiter: rateLimiter,
@@ -68,7 +74,7 @@ func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
 	if err := p.webhook.Send(ctx, current.Recipient, current.Channel, current.Content); err != nil {
 		logger.WithError(err).WithField("retryCount", current.RetryCount).Error("webhook delivery failed")
 		FailedCounter.Add(ctx, 1, metric.WithAttributes(attrs))
-		p.handleFailure(ctx, current, logger)
+		p.HandleFailure(ctx, current, logger)
 		return
 	}
 
@@ -82,7 +88,7 @@ func (p *Processor) Process(ctx context.Context, n *notification.Notification) {
 	logger.Info("notification delivered")
 }
 
-func (p *Processor) handleFailure(ctx context.Context, n *notification.Notification, logger *log.Entry) {
+func (p *Processor) HandleFailure(ctx context.Context, n *notification.Notification, logger *log.Entry) {
 	nextRetry := n.RetryCount + 1
 
 	if nextRetry >= n.MaxRetries {
