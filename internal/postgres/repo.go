@@ -171,8 +171,38 @@ func (r *Repo) IncrementRetry(ctx context.Context, id uuid.UUID, nextRetryAt tim
 	return &n, nil
 }
 
+func (r *Repo) CancelIfPending(ctx context.Context, id uuid.UUID) (*notification.Notification, error) {
+	var n notification.Notification
+	err := r.pool.QueryRow(ctx,
+		`UPDATE notifications SET status = 'cancelled', updated_at = NOW()
+		 WHERE id = $1 AND status = 'pending'
+		 RETURNING id, batch_id, recipient, channel, content, priority, status, retry_count, max_retries, next_retry_at, created_at, updated_at`,
+		id,
+	).Scan(&n.ID, &n.BatchID, &n.Recipient, &n.Channel, &n.Content, &n.Priority, &n.Status, &n.RetryCount, &n.MaxRetries, &n.NextRetryAt, &n.CreatedAt, &n.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			existing, getErr := r.GetByID(ctx, id)
+			if getErr != nil {
+				return nil, getErr
+			}
+			if existing.Status != notification.StatusPending {
+				return nil, notification.ErrNotCancellable
+			}
+			return nil, notification.ErrNotFound
+		}
+		return nil, err
+	}
+	return &n, nil
+}
+
 func (r *Repo) ListRetryable(ctx context.Context, limit int) ([]*notification.Notification, error) {
-	rows, err := r.pool.Query(ctx,
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx,
 		`SELECT id, batch_id, recipient, channel, content, priority, status, retry_count, max_retries, next_retry_at, created_at, updated_at
 		 FROM notifications
 		 WHERE status = 'failed' AND next_retry_at IS NOT NULL AND next_retry_at <= NOW() AND retry_count < max_retries
@@ -195,6 +225,10 @@ func (r *Repo) ListRetryable(ctx context.Context, limit int) ([]*notification.No
 	}
 
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 

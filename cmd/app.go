@@ -6,6 +6,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/labstack/echo/v4"
+	echoSwagger "github.com/swaggo/echo-swagger"
+
 	"github.com/smhknylmz/EventHub/internal/config"
 	"github.com/smhknylmz/EventHub/internal/middleware"
 	"github.com/smhknylmz/EventHub/internal/notification"
@@ -19,6 +21,8 @@ import (
 	"github.com/smhknylmz/EventHub/pkg/postgres"
 	pkgredis "github.com/smhknylmz/EventHub/pkg/redis"
 	pkgvalidator "github.com/smhknylmz/EventHub/pkg/validator"
+
+	_ "github.com/smhknylmz/EventHub/docs"
 )
 
 func Execute() {
@@ -85,6 +89,7 @@ func Execute() {
 	e.Use(middleware.Idempotency(redisClient, cfg.IdempotencyTTL))
 
 	e.GET("/metrics", echo.WrapHandler(metricsHandler))
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	notificationHandler := notification.NewHandler(notificationService)
 	notificationHandler.Register(e)

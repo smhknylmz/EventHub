@@ -1,0 +1,49 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-eventhub}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      WEBHOOK_BASE_URL: ${WEBHOOK_BASE_URL:-https://webhook.site/your-uuid-here}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      MAX_RETRIES: ${MAX_RETRIES:-5}
+      BACKOFF_BASE: ${BACKOFF_BASE:-1s}
+      RETRY_POLL_INTERVAL: ${RETRY_POLL_INTERVAL:-5s}
+      IDEMPOTENCY_TTL: ${IDEMPOTENCY_TTL:-24h}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-eventhub}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER:-postgres}
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: redis-cli ping
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

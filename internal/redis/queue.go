@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -89,7 +90,12 @@ func (q *Queue) PublishBatch(ctx context.Context, notifications []*notification.
 	return err
 }
 
-func (q *Queue) Read(ctx context.Context, stream, consumer string, count int64) ([]*notification.Notification, error) {
+type StreamMessage struct {
+	Notification *notification.Notification
+	StreamMsgID  string
+}
+
+func (q *Queue) Read(ctx context.Context, stream, consumer string, count int64) ([]StreamMessage, error) {
 	results, err := q.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    groupName,
 		Consumer: consumer,
@@ -98,13 +104,16 @@ func (q *Queue) Read(ctx context.Context, stream, consumer string, count int64) 
 		Block:    10 * time.Second,
 	}).Result()
 	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if len(results) == 0 {
 		return nil, nil
 	}
 
-	var notifications []*notification.Notification
+	var messages []StreamMessage
 	for _, msg := range results[0].Messages {
 		idStr, _ := msg.Values["id"].(string)
 		id, err := uuid.Parse(idStr)
@@ -119,19 +128,23 @@ func (q *Queue) Read(ctx context.Context, stream, consumer string, count int64) 
 		content, _ := msg.Values["content"].(string)
 		priority, _ := msg.Values["priority"].(string)
 
-		notifications = append(notifications, &notification.Notification{
-			ID:        id,
-			Recipient: recipient,
-			Channel:   channel,
-			Content:   content,
-			Priority:  priority,
+		messages = append(messages, StreamMessage{
+			Notification: &notification.Notification{
+				ID:        id,
+				Recipient: recipient,
+				Channel:   channel,
+				Content:   content,
+				Priority:  priority,
+			},
+			StreamMsgID: msg.ID,
 		})
-		if err := q.client.XAck(ctx, stream, groupName, msg.ID).Err(); err != nil {
-			q.logger.WithError(err).WithField("messageId", msg.ID).Error("failed to ack message")
-		}
 	}
 
-	return notifications, nil
+	return messages, nil
+}
+
+func (q *Queue) Ack(ctx context.Context, stream, msgID string) error {
+	return q.client.XAck(ctx, stream, groupName, msgID).Err()
 }
 
 func (q *Queue) TotalDepth(ctx context.Context) (int64, error) {

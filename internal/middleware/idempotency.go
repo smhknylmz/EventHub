@@ -23,6 +23,10 @@ type cachedEntry struct {
 func Idempotency(client *redis.Client, ttl time.Duration) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			if c.Request().Method != http.MethodPost {
+				return next(c)
+			}
+
 			key := c.Request().Header.Get(IdempotencyKeyHeader)
 			if key == "" {
 				return next(c)

@@ -1,0 +1,259 @@
+basePath: /
+definitions:
+  notification.BatchCreateRequest:
+    properties:
+      notifications:
+        items:
+          $ref: '#/definitions/notification.CreateRequest'
+        maxItems: 1000
+        minItems: 1
+        type: array
+    required:
+    - notifications
+    type: object
+  notification.BatchCreateResponse:
+    properties:
+      batchId:
+        type: string
+      total:
+        type: integer
+    type: object
+  notification.CreateRequest:
+    properties:
+      channel:
+        enum:
+        - email
+        - sms
+        - push
+        type: string
+      content:
+        maxLength: 10000
+        type: string
+      priority:
+        enum:
+        - high
+        - normal
+        - low
+        type: string
+      recipient:
+        maxLength: 255
+        type: string
+    required:
+    - channel
+    - content
+    - recipient
+    type: object
+  notification.ErrorResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  notification.PagedResponse:
+    properties:
+      data: {}
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      totalCount:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  notification.Response:
+    properties:
+      batchId:
+        type: string
+      channel:
+        type: string
+      content:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: string
+      nextRetryAt:
+        type: string
+      priority:
+        type: string
+      recipient:
+        type: string
+      retryCount:
+        type: integer
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Event-Driven Notification System
+  title: EventHub API
+  version: "1.0"
+paths:
+  /api/v1/notifications:
+    get:
+      parameters:
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by channel
+        in: query
+        name: channel
+        type: string
+      - description: Filter by batch ID
+        in: query
+        name: batchId
+        type: string
+      - description: Filter by start date (RFC3339)
+        in: query
+        name: startDate
+        type: string
+      - description: Filter by end date (RFC3339)
+        in: query
+        name: endDate
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/notification.PagedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+      summary: List notifications
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notification payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/notification.CreateRequest'
+      - description: Idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/notification.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+      summary: Create a notification
+      tags:
+      - notifications
+  /api/v1/notifications/{id}:
+    get:
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/notification.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+      summary: Get notification by ID
+      tags:
+      - notifications
+  /api/v1/notifications/{id}/cancel:
+    patch:
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/notification.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+      summary: Cancel a pending notification
+      tags:
+      - notifications
+  /api/v1/notifications/batch:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Batch payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/notification.BatchCreateRequest'
+      - description: Idempotency key
+        in: header
+        name: Idempotency-Key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/notification.BatchCreateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/notification.ErrorResponse'
+      summary: Create notifications in batch
+      tags:
+      - notifications
+swagger: "2.0"

@@ -42,10 +42,11 @@ func (d *Dispatcher) Start(ctx context.Context) {
 
 	for _, key := range redisadapter.AllStreamKeys() {
 		wg.Add(1)
-		go func(stream string) {
+		stream := key
+		go func() {
 			defer wg.Done()
 			d.consumeStream(ctx, stream)
-		}(key)
+		}()
 	}
 
 	wg.Wait()
@@ -62,7 +63,7 @@ func (d *Dispatcher) consumeStream(ctx context.Context, stream string) {
 		default:
 		}
 
-		notifications, err := d.queue.Read(ctx, stream, d.consumer, count)
+		messages, err := d.queue.Read(ctx, stream, d.consumer, count)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -72,8 +73,11 @@ func (d *Dispatcher) consumeStream(ctx context.Context, stream string) {
 			continue
 		}
 
-		for _, n := range notifications {
-			d.processor.Process(ctx, n)
+		for _, msg := range messages {
+			d.processor.Process(ctx, msg.Notification)
+			if err := d.queue.Ack(ctx, stream, msg.StreamMsgID); err != nil {
+				d.logger.WithError(err).WithField("messageId", msg.StreamMsgID).Error("failed to ack message")
+			}
 		}
 	}
 }

@@ -14,6 +14,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Notification, error)
 	List(ctx context.Context, params ListParams) ([]*Notification, int, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) (*Notification, error)
+	CancelIfPending(ctx context.Context, id uuid.UUID) (*Notification, error)
 	IncrementRetry(ctx context.Context, id uuid.UUID, nextRetryAt time.Time) (*Notification, error)
 	ListRetryable(ctx context.Context, limit int) ([]*Notification, error)
 }
@@ -153,14 +154,7 @@ func (s *NotificationService) Cancel(ctx context.Context, id string) (*Response,
 	if err != nil {
 		return nil, ErrInvalidID
 	}
-	n, err := s.repo.GetByID(ctx, uid)
-	if err != nil {
-		return nil, err
-	}
-	if n.Status != StatusPending {
-		return nil, ErrNotCancellable
-	}
-	n, err = s.repo.UpdateStatus(ctx, uid, StatusCancelled)
+	n, err := s.repo.CancelIfPending(ctx, uid)
 	if err != nil {
 		return nil, err
 	}
